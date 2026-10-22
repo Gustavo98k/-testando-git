@@ -11,6 +11,25 @@ import {
 } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 
+// Variável global para manter a instância única do banco (Evita erros de concorrência na Web)
+let dbInstance = null;
+
+async function obterConexaoBanco() {
+  if (!dbInstance) {
+    dbInstance = await SQLite.openDatabaseAsync('meubanco_v3.db');
+    // Criação da tabela com Nome, Email e Cargo
+    await dbInstance.execAsync(`
+      CREATE TABLE IF NOT EXISTS usuarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        nome TEXT NOT NULL,
+        email TEXT NOT NULL,
+        cargo TEXT NOT NULL
+      );
+    `);
+  }
+  return dbInstance;
+}
+
 export default function App() {
   const [bancoDados, setBancoDados] = useState(null);
   
@@ -28,20 +47,9 @@ export default function App() {
   useEffect(() => {
     async function configurarBanco() {
       try {
-        const conexao = await SQLite.openDatabaseAsync('meubanco_v2.db');
+        const conexao = await obterConexaoBanco();
         setBancoDados(conexao);
-
-        // Criação da tabela com Nome, Email e Cargo
-        await conexao.execAsync(`
-          CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            nome TEXT NOT NULL,
-            email TEXT NOT NULL,
-            cargo TEXT NOT NULL
-          );
-        `);
-
-        carregarUsuarios(conexao);
+        await carregarUsuarios(conexao);
       } catch (erro) {
         console.error('Erro ao inicializar o banco:', erro);
       }
@@ -53,7 +61,9 @@ export default function App() {
   // 2. CONSULTA SEM PARÂMETRO (Busca todos os cadastros)
   const carregarUsuarios = async (conexao) => {
     try {
-      const todasLinhas = await conexao.getAllAsync('SELECT * FROM usuarios;');
+      const db = conexao || bancoDados;
+      if (!db) return;
+      const todasLinhas = await db.getAllAsync('SELECT * FROM usuarios;');
       setUsuarios(todasLinhas);
     } catch (erro) {
       console.error('Erro ao buscar usuários:', erro);
@@ -75,7 +85,7 @@ export default function App() {
       setEmail('');
       setCargo('');
       
-      carregarUsuarios(bancoDados); // Atualiza a lista na tela
+      await carregarUsuarios(bancoDados); // Atualiza a lista na tela
     } catch (erro) {
       console.error('Erro ao inserir usuário:', erro);
     }
@@ -102,7 +112,7 @@ export default function App() {
 
     try {
       await bancoDados.runAsync('DELETE FROM usuarios WHERE id = ?;', [id]);
-      carregarUsuarios(bancoDados);
+      await carregarUsuarios(bancoDados);
       if (usuarioEncontrado && usuarioEncontrado.id === id) {
         setUsuarioEncontrado(null);
       }
